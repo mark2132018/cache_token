@@ -1,12 +1,14 @@
 #![cfg_attr(not(feature = "std"), no_std, no_main)]
 
-#[openbrush::implementation(PSP34)]
+pub use self::cache_token::CacheTokenRef;
+
+#[openbrush::implementation(PSP34, PSP34Metadata, PSP34Enumerable)]
 #[openbrush::contract]
 mod cache_token {
     use crate::cache_token::PSP34Impl;
     use ink::{env::hash::Keccak256, storage::Mapping};
     use openbrush::{
-        contracts::psp34::{Internal, Owner, PSP34Error},
+        contracts::psp34::{Owner, PSP34Error},
         traits::Storage,
     };
     use scale::Encode;
@@ -18,6 +20,10 @@ mod cache_token {
     pub struct CacheToken {
         #[storage_field]
         psp34: psp34::Data,
+        #[storage_field]
+        metadata: metadata::Data,
+        #[storage_field]
+        enumerable: enumerable::Data,
         owner: Owner,
         release_time: Mapping<TokenId, u64>,
     }
@@ -28,20 +34,23 @@ mod cache_token {
         token_id: TokenId,
     }
 
-    impl Default for CacheToken {
-        fn default() -> Self {
-            Self::new()
-        }
-    }
-
     impl CacheToken {
         #[ink(constructor)]
-        pub fn new() -> Self {
-            Self {
+        pub fn new(name: String, symbol: String) -> Self {
+            let mut instance = Self {
                 owner: Self::env().caller(),
                 psp34: Default::default(),
                 release_time: Mapping::default(),
-            }
+                metadata: Default::default(),
+                enumerable: Default::default(),
+            };
+            let token_id = Self::generate_token();
+            let name_key = String::from("name");
+            let symbol_key = String::from("symbol");
+            metadata::Internal::_set_attribute(&mut instance, Id::Bytes(token_id.clone()), name_key, name);
+            metadata::Internal::_set_attribute(&mut instance, Id::Bytes(token_id), symbol_key, symbol);
+
+            instance
         }
 
         #[ink(message, payable)]
@@ -137,8 +146,14 @@ mod cache_token {
         }
 
         #[ink(message)]
-        pub fn check_block_timestamp(&self) -> Result<u64, PSP34Error> {
-            Ok(self.env().block_timestamp())
+        pub fn owner_of(&self, token_id: TokenId) -> Result<Option<AccountId>, PSP34Error> {
+            let account = psp34::Internal::_owner_of(self, &Id::Bytes(token_id));
+            Ok(account)
+        }
+
+        #[ink(message)]
+        pub fn account_id(&self) -> AccountId {
+            self.env().account_id()
         }
     }
 }
